@@ -1,0 +1,38 @@
+{
+  "name": "zeil-examiner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "api": "tsx watch server/index.ts",
+    "api:start": "tsx server/index.ts",
+    "eval": "tsx scripts/score-evaluation.ts",
+    "check:gemini": "tsx scripts/check-gemini.ts",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run --pool=threads --maxWorkers=1",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest",
+    "qrcode": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/user-event": "latest",
+    "@types/qrcode": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "jsdom": "latest",
+    "dotenv": "latest",
+    "tsx": "latest"
+  }
+}
