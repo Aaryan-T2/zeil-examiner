@@ -126,18 +126,6 @@ These are shown on the login page. They are **not real authentication** — do n
 
 ---
 
-## Testing with a phone (live proctoring)
-
-The QR/invite URLs use your machine's **LAN IP** so a phone on the same Wi-Fi can connect:
-
-1. The app auto-detects your LAN IP (`/api/health` → `lanAddress`).
-2. If Windows Firewall prompts for Node.js, **Allow** it (or run as admin):
-   ```
-   netsh advfirewall firewall add rule name="ZEIL Vite 5173" dir=in action=allow protocol=TCP localport=5173
-   ```
-3. Phones on plain HTTP don't get camera APIs — the app automatically falls back to a **file-upload capture** (`<input type="file" capture="environment">`), which opens the phone camera fine over HTTP.
-
----
 
 ## How it works (architecture)
 
