@@ -18,7 +18,8 @@ config({ path: '../../.env' });
 const sessions = new Map<string, { challenge: Challenge; createdAt: number; candidateToken: string }>();
 const sessionEvents = new Map<string, IntegrityEvent[]>();
 const setupEvents = new Map<string, IntegrityEvent[]>();
-const assessments = new Map<string, { challenge: Challenge; submission: CandidateSubmission; result: Awaited<ReturnType<typeof assessSubmissionWithGemini>>; integrityEvents: IntegrityEvent[]; createdAt: number; reviewStatus: 'needs-review' | 'reviewed' }>();
+type ReviewDecision = 'discussion' | 'follow-up';
+const assessments = new Map<string, { challenge: Challenge; submission: CandidateSubmission; result: Awaited<ReturnType<typeof assessSubmissionWithGemini>>; integrityEvents: IntegrityEvent[]; createdAt: number; reviewStatus: 'needs-review' | 'reviewed'; notes?: string; decision?: ReviewDecision | null }>();
 const PORT = Number(process.env.PORT ?? 8787);
 const MAX_BODY = 4 * 1024 * 1024;
 
@@ -183,7 +184,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === 'GET' && url.pathname === '/api/recruiter/submissions') {
-    reply(response, 200, { submissions: Array.from(assessments.values()).map(({ challenge, submission, result, integrityEvents, reviewStatus }) => ({ challenge, submission, assessment: result, integrityEvents, reviewStatus })) });
+    reply(response, 200, { submissions: Array.from(assessments.values()).map(({ challenge, submission, result, integrityEvents, reviewStatus, notes, decision }) => ({ challenge, submission, assessment: result, integrityEvents, reviewStatus, notes: notes ?? null, decision: decision ?? null })) });
     return;
   }
   if (request.method === 'PATCH' && url.pathname.startsWith('/api/recruiter/submissions/')) {
@@ -191,10 +192,23 @@ const server = createServer(async (request, response) => {
     const existing = assessments.get(submissionId);
     if (!existing) { reply(response, 404, { error: 'Submission not found.' }); return; }
     try {
-      const input = await readJson(request) as { reviewStatus?: string };
-      if (input.reviewStatus !== 'reviewed' && input.reviewStatus !== 'needs-review') { reply(response, 400, { error: 'Review status is invalid.' }); return; }
-      assessments.set(submissionId, { ...existing, reviewStatus: input.reviewStatus });
-      reply(response, 200, { ok: true, reviewStatus: input.reviewStatus });
+      const input = await readJson(request) as { reviewStatus?: unknown; notes?: unknown; decision?: unknown };
+      const patch: { reviewStatus?: 'needs-review' | 'reviewed'; notes?: string; decision?: ReviewDecision | null } = {};
+      if ('reviewStatus' in input) {
+        if (input.reviewStatus !== 'reviewed' && input.reviewStatus !== 'needs-review') { reply(response, 400, { error: 'Review status is invalid.' }); return; }
+        patch.reviewStatus = input.reviewStatus;
+      }
+      if ('notes' in input) {
+        if (typeof input.notes !== 'string' || input.notes.length > 5000) { reply(response, 400, { error: 'Notes are too long.' }); return; }
+        patch.notes = input.notes;
+      }
+      if ('decision' in input) {
+        if (input.decision !== null && input.decision !== 'discussion' && input.decision !== 'follow-up') { reply(response, 400, { error: 'Decision is invalid.' }); return; }
+        patch.decision = input.decision as ReviewDecision | null;
+      }
+      const updated = { ...existing, ...patch };
+      assessments.set(submissionId, updated);
+      reply(response, 200, { ok: true, reviewStatus: updated.reviewStatus, notes: updated.notes ?? null, decision: updated.decision ?? null });
     } catch { reply(response, 400, { error: 'Review status is invalid.' }); }
     return;
   }

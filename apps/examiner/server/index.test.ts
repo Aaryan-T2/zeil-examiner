@@ -152,4 +152,40 @@ describe('assessment API', () => {
     const inbox = await fetch(`${baseUrl}/api/recruiter/submissions`);
     expect((await inbox.json() as { submissions: unknown[] }).submissions.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('stores recruiter notes and decisions and rejects invalid review patches', async () => {
+    const { challengeLibrary } = await import('../src/shared/challenge-library');
+    const challenge = challengeLibrary.find((item) => item.id === 'engineer-api-debug');
+    if (!challenge) throw new Error('Missing engineer-api-debug challenge.');
+    const sessionResponse = await fetch(`${baseUrl}/api/assessment-sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.id }) });
+    expect(sessionResponse.status).toBe(201);
+    const session = await sessionResponse.json() as { sessionId: string; candidateToken: string };
+    const submission = { id: 'api-submission-review-notes', challengeId: challenge.id, candidateName: 'Synthetic Reviewer', submittedAt: '2026-10-09T02:00:00.000Z', response: 'Filter archived rows inside the query.' };
+    const assessed = await fetch(`${baseUrl}/api/assess`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-candidate-token': session.candidateToken }, body: JSON.stringify({ sessionId: session.sessionId, challenge, submission, integrityEvents: [] }) });
+    expect(assessed.status).toBe(200);
+
+    const notes = 'Call the candidate about the pagination bug walkthrough.';
+    const patched = await fetch(`${baseUrl}/api/recruiter/submissions/${submission.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notes, decision: 'follow-up' }) });
+    expect(patched.status).toBe(200);
+    const patchedBody = await patched.json() as { ok: boolean; reviewStatus: string; notes: string; decision: string };
+    expect(patchedBody.ok).toBe(true);
+    expect(patchedBody.notes).toBe(notes);
+    expect(patchedBody.decision).toBe('follow-up');
+
+    const inbox = await fetch(`${baseUrl}/api/recruiter/submissions`);
+    expect(inbox.status).toBe(200);
+    const rows = (await inbox.json() as { submissions: Array<{ submission: { id: string }; notes: string | null; decision: string | null }> }).submissions;
+    const row = rows.find((item) => item.submission.id === submission.id);
+    expect(row).toBeTruthy();
+    expect(row?.notes).toBe(notes);
+    expect(row?.decision).toBe('follow-up');
+
+    const longNotes = await fetch(`${baseUrl}/api/recruiter/submissions/${submission.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notes: 'x'.repeat(6000) }) });
+    expect(longNotes.status).toBe(400);
+    expect((await longNotes.json() as { error: string }).error).toBe('Notes are too long.');
+
+    const badDecision = await fetch(`${baseUrl}/api/recruiter/submissions/${submission.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'nope' }) });
+    expect(badDecision.status).toBe(400);
+    expect((await badDecision.json() as { error: string }).error).toBe('Decision is invalid.');
+  });
 });
