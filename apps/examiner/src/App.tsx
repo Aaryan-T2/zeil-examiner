@@ -79,7 +79,7 @@ export function App() {
   const [candidateReady, setCandidateReady] = useState(false);
   const [isAssessing, setIsAssessing] = useState(false);
   const [serverSubmissions, setServerSubmissions] = useState<AssessmentBundle[]>([]);
-  const [reviewExtras, setReviewExtras] = useState<Record<string, { notes: string; decision: 'discussion' | 'follow-up' | null }>>(() => { try { return JSON.parse(localStorage.getItem('examiner.review-extras.v1') ?? '{}'); } catch { return {}; } });
+  const [reviewExtras, setReviewExtras] = useState<Record<string, { notes: string; decision: 'discussion' | 'follow-up' | null }>>(() => { try { return JSON.parse(localStorage.getItem('examiner.review-extras.v2') ?? '{}'); } catch { return {}; } });
   const [setupImage, setSetupImage] = useState('');
   const [setupConsent, setSetupConsent] = useState(false);
   const [setupStatus, setSetupStatus] = useState('');
@@ -306,7 +306,7 @@ export function App() {
 
   function findInviteToken(sessionId: string): string | null {
     try {
-      const invites = JSON.parse(localStorage.getItem('examiner.demo-invites.v1') ?? '[]') as Array<{ sessionId: string; token?: string }>;
+      const invites = JSON.parse(localStorage.getItem('examiner.demo-invites.v2') ?? '[]') as Array<{ sessionId: string; token?: string }>;
       return invites.find((invite) => invite.sessionId === sessionId)?.token ?? null;
     } catch { return null; }
   }
@@ -382,7 +382,7 @@ export function App() {
   if (activeUser.role !== 'recruiter') return null;
 
   if (route === 'review' && selectedAssessment) {
-    return <ReviewReport bundle={selectedAssessment} onBack={() => setRoute('recruiter')} reviewStatus={selectedAssessment.reviewStatus ?? 'needs-review'} onReviewChange={changeReviewStatus} notes={reviewExtras[selectedAssessment.submission.id]?.notes ?? ''} decision={reviewExtras[selectedAssessment.submission.id]?.decision ?? null} onSaveReview={(patch) => { const id = selectedAssessment.submission.id; setReviewExtras((all) => { const next = { ...all, [id]: { notes: patch.notes ?? all[id]?.notes ?? '', decision: patch.decision !== undefined ? patch.decision : all[id]?.decision ?? null } }; try { localStorage.setItem('examiner.review-extras.v1', JSON.stringify(next)); } catch { /* storage full */ } return next; }); if (patch.decision !== undefined) { void fetch(`/api/recruiter/submissions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: patch.decision }) }); } if (patch.notes !== undefined) { void fetch(`/api/recruiter/submissions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: patch.notes }) }); } }} />;
+    return <ReviewReport bundle={selectedAssessment} onBack={() => setRoute('recruiter')} reviewStatus={selectedAssessment.reviewStatus ?? 'needs-review'} onReviewChange={changeReviewStatus} notes={reviewExtras[selectedAssessment.submission.id]?.notes ?? ''} decision={reviewExtras[selectedAssessment.submission.id]?.decision ?? null} onSaveReview={(patch) => { const id = selectedAssessment.submission.id; setReviewExtras((all) => { const next = { ...all, [id]: { notes: patch.notes ?? all[id]?.notes ?? '', decision: patch.decision !== undefined ? patch.decision : all[id]?.decision ?? null } }; try { localStorage.setItem('examiner.review-extras.v2', JSON.stringify(next)); } catch { /* storage full */ } return next; }); if (patch.decision !== undefined) { void fetch(`/api/recruiter/submissions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: patch.decision }) }); } if (patch.notes !== undefined) { void fetch(`/api/recruiter/submissions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: patch.notes }) }); } }} />;
   }
 
   function saveChallenge() {

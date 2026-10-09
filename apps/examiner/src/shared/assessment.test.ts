@@ -63,7 +63,7 @@ describe('assessment store', () => {
   });
 
   it('recovers from malformed local storage without throwing', () => {
-    storage.setItem('examiner.assessments.v1', '{broken');
+    storage.setItem('examiner.assessments.v2', '{broken');
     expect(store.list()).toEqual([]);
   });
 

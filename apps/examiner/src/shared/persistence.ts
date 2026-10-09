@@ -3,8 +3,8 @@ import type { AssessmentBundle } from './assessment';
 import { createAssessmentStore } from './assessment';
 import { challengeLibrary } from './challenge-library';
 
-const CHALLENGE_KEY = 'examiner.challenges.v1';
-const INVITE_KEY = 'examiner.demo-invites.v1';
+const CHALLENGE_KEY = 'examiner.challenges.v2';
+const INVITE_KEY = 'examiner.demo-invites.v2';
 
 export interface DemoInvite {
   sessionId: string;

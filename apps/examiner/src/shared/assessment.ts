@@ -15,7 +15,7 @@ export interface AssessmentStore {
   remove(submissionId: string): void;
 }
 
-const STORE_KEY = 'examiner.assessments.v1';
+const STORE_KEY = 'examiner.assessments.v2';
 
 export function createAssessmentStore(storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>): AssessmentStore {
   const backing = storage ?? (typeof window === 'undefined' ? undefined : window.localStorage);
