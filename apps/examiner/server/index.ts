@@ -8,6 +8,7 @@ import { challengeLibrary } from '../src/shared/challenge-library.ts';
 import { validateAssessment, validateChallenge } from '../src/shared/contracts.ts';
 import type { CandidateSubmission, Challenge, IntegrityEvent } from '../src/shared/contracts.ts';
 import { validateSubmission } from '../src/shared/contracts.ts';
+import { generateChallengeFromRole } from '../src/shared/gemini-challenge.ts';
 
 config({ path: '.env' });
 config({ path: '../../.env' });
@@ -15,7 +16,7 @@ config({ path: '../../.env' });
 const sessions = new Map<string, { challenge: Challenge; createdAt: number; candidateToken: string }>();
 const sessionEvents = new Map<string, IntegrityEvent[]>();
 const setupEvents = new Map<string, IntegrityEvent[]>();
-const assessments = new Map<string, { submission: CandidateSubmission; result: Awaited<ReturnType<typeof assessSubmissionWithGemini>>; integrityEvents: IntegrityEvent[]; createdAt: number; reviewStatus: 'needs-review' | 'reviewed' }>();
+const assessments = new Map<string, { challenge: Challenge; submission: CandidateSubmission; result: Awaited<ReturnType<typeof assessSubmissionWithGemini>>; integrityEvents: IntegrityEvent[]; createdAt: number; reviewStatus: 'needs-review' | 'reviewed' }>();
 const PORT = Number(process.env.PORT ?? 8787);
 const MAX_BODY = 48 * 1024;
 
@@ -93,20 +94,12 @@ const server = createServer(async (request, response) => {
     response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phone setup checkpoint â€” Examiner</title><style>${styles}</style><script type="module" src="/src/main.tsx"></script></head><body><div id="root"></div></body></html>`);
     return;
   }
-  if (request.method === 'GET' && url.pathname === '/candidate') {
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
-    response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Candidate assessment â€” Examiner</title><style>${styles}</style><script type="module" src="/src/main.tsx"></script></head><body><div id="root"></div></body></html>`);
-    return;
-  }
-  if (request.method === 'GET' && url.pathname === '/setup') {
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
-    response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phone setup checkpoint â€” Examiner</title><style>${styles}</style><script type="module" src="/src/main.tsx"></script></head><body><div id="root"></div></body></html>`);
-    return;
-  }
   if (request.method === 'POST' && url.pathname === '/api/assessment-sessions') {
     try {
-      const input = await readJson(request) as { challengeId?: string };
-      const challenge = challengeLibrary.find((item) => item.id === input.challengeId);
+      const input = await readJson(request) as { challengeId?: string; challenge?: unknown };
+      const libraryChallenge = challengeLibrary.find((item) => item.id === input.challengeId);
+      const fallbackChallenge = !libraryChallenge && input.challenge && typeof input.challenge === 'object' && validateChallenge(input.challenge as Challenge).length === 0 ? input.challenge as Challenge : undefined;
+      const challenge = libraryChallenge ?? fallbackChallenge;
       if (!challenge) { reply(response, 404, { error: 'Challenge not found.' }); return; }
       const id = randomUUID();
       const candidateToken = randomUUID();
@@ -149,13 +142,13 @@ const server = createServer(async (request, response) => {
       const result = await assessSubmissionWithGemini(challenge, input.submission, process.env.GEMINI_API_KEY);
       if (validateAssessment(result, input.submission, challenge).length > 0) { reply(response, 502, { error: 'Assessment output failed validation.' }); return; }
       const events = sessionId ? [...input.integrityEvents, ...(setupEvents.get(sessionId) ?? [])] : input.integrityEvents;
-      assessments.set(input.submission.id, { submission: input.submission, result, integrityEvents: events, createdAt: Date.now(), reviewStatus: 'needs-review' });
+      assessments.set(input.submission.id, { challenge, submission: input.submission, result, integrityEvents: events, createdAt: Date.now(), reviewStatus: 'needs-review' });
       reply(response, 200, { assessment: result, integrityEvents: events });
     } catch (error) { reply(response, 400, { error: error instanceof Error ? error.message : 'Unable to assess submission.' }); }
     return;
   }
   if (request.method === 'GET' && url.pathname === '/api/recruiter/submissions') {
-    reply(response, 200, { submissions: Array.from(assessments.values()).map(({ submission, result, integrityEvents, reviewStatus }) => ({ submission, assessment: result, integrityEvents, reviewStatus })) });
+    reply(response, 200, { submissions: Array.from(assessments.values()).map(({ challenge, submission, result, integrityEvents, reviewStatus }) => ({ challenge, submission, assessment: result, integrityEvents, reviewStatus })) });
     return;
   }
   if (request.method === 'PATCH' && url.pathname.startsWith('/api/recruiter/submissions/')) {
@@ -168,6 +161,20 @@ const server = createServer(async (request, response) => {
       assessments.set(submissionId, { ...existing, reviewStatus: input.reviewStatus });
       reply(response, 200, { ok: true, reviewStatus: input.reviewStatus });
     } catch { reply(response, 400, { error: 'Review status is invalid.' }); }
+    return;
+  }
+  if (request.method === 'GET' && /^\/api\/assessment-sessions\/[^/]+\/setup-count$/.test(url.pathname)) {
+    const id = url.pathname.split('/')[3] ?? '';
+    const session = sessions.get(id);
+    if (!session) { reply(response, 404, { error: 'Assessment session not found.' }); return; }
+    if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
+      sessions.delete(id);
+      reply(response, 410, { error: 'Assessment session expired.' });
+      return;
+    }
+    const candidateToken = request.headers['x-candidate-token'];
+    if (typeof candidateToken !== 'string' || candidateToken !== session.candidateToken) { reply(response, 403, { error: 'Assessment invitation is invalid.' }); return; }
+    reply(response, 200, { count: (setupEvents.get(id) ?? []).length });
     return;
   }
   if (request.method === 'GET' && url.pathname.startsWith('/api/assessment-sessions/')) {
@@ -183,6 +190,22 @@ const server = createServer(async (request, response) => {
     const candidateToken = request.headers['x-candidate-token'];
     if (typeof candidateToken !== 'string' || candidateToken !== session.candidateToken) { reply(response, 403, { error: 'Assessment invitation is invalid.' }); return; }
     reply(response, 200, { sessionId: id, challenge: session.challenge });
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === '/api/generate-challenge') {
+    try {
+      const input = await readJson(request) as { roleTitle?: unknown; difficulty?: unknown; mode?: unknown; department?: unknown };
+      const roleTitle = typeof input.roleTitle === 'string' ? input.roleTitle.trim() : '';
+      if (roleTitle.length < 3 || roleTitle.length > 120) { reply(response, 400, { error: 'Enter a job role with at least 3 characters.' }); return; }
+      const difficulty = input.difficulty === undefined ? 'Intermediate' : input.difficulty;
+      if (difficulty !== 'Foundational' && difficulty !== 'Intermediate' && difficulty !== 'Advanced') { reply(response, 400, { error: 'Difficulty is invalid.' }); return; }
+      const mode = input.mode === undefined ? 'technical-scenario' : input.mode;
+      if (mode !== 'debugging' && mode !== 'code-review' && mode !== 'technical-scenario') { reply(response, 400, { error: 'Mode is invalid.' }); return; }
+      const department = typeof input.department === 'string' ? input.department.slice(0, 120) : 'General';
+      const { challenge, generatedBy } = await generateChallengeFromRole(roleTitle, difficulty, mode, department, process.env.GEMINI_API_KEY);
+      if (validateChallenge(challenge).length > 0) { reply(response, 502, { error: 'Generated challenge failed validation.' }); return; }
+      reply(response, 200, { challenge, generatedBy });
+    } catch (error) { reply(response, 400, { error: error instanceof Error ? error.message : 'Unable to generate challenge.' }); }
     return;
   }
   reply(response, 404, { error: 'Not found.' });

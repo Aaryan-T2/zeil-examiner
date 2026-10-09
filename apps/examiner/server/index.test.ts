@@ -92,6 +92,23 @@ describe('assessment API', () => {
     expect(invalidSubmission.status).toBe(400);
   });
 
+  it('rejects generated challenges for invalid role titles and difficulties', async () => {
+    const shortRole = await fetch(`${baseUrl}/api/generate-challenge`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roleTitle: 'AB' }) });
+    expect(shortRole.status).toBe(400);
+    const badDifficulty = await fetch(`${baseUrl}/api/generate-challenge`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roleTitle: 'Data Analyst', difficulty: 'Nonsense' }) });
+    expect(badDifficulty.status).toBe(400);
+  });
+
+  it('reports a setup count only to the session candidate token', async () => {
+    const sessionResponse = await fetch(`${baseUrl}/api/assessment-sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: 'engineer-api-debug' }) });
+    const session = await sessionResponse.json() as { sessionId: string; candidateToken: string };
+    const unauthorized = await fetch(`${baseUrl}/api/assessment-sessions/${session.sessionId}/setup-count`);
+    expect(unauthorized.status).toBe(403);
+    const authorized = await fetch(`${baseUrl}/api/assessment-sessions/${session.sessionId}/setup-count`, { headers: { 'x-candidate-token': session.candidateToken } });
+    expect(authorized.status).toBe(200);
+    expect((await authorized.json() as { count: number }).count).toBe(0);
+  });
+
   it('returns a validated deterministic assessment with no API key and lists it for recruiters', async () => {
     const { challengeLibrary } = await import('../src/shared/challenge-library');
     const challenge = challengeLibrary[0];

@@ -83,6 +83,13 @@ export function App() {
   const [setupStatus, setSetupStatus] = useState('');
   const [phoneUrl, setPhoneUrl] = useState('');
   const [phoneQrSvg, setPhoneQrSvg] = useState('');
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiRoleTitle, setAiRoleTitle] = useState('');
+  const [aiDifficulty, setAiDifficulty] = useState<'Foundational'|'Intermediate'|'Advanced'>('Intermediate');
+  const [aiMode, setAiMode] = useState<Challenge['mode']>('technical-scenario');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiDone, setAiDone] = useState(false);
 
   useEffect(() => {
     if (activeUser?.role !== 'recruiter') return;
@@ -101,11 +108,17 @@ export function App() {
     return matchesQuery && (filter === 'all' || challenge.source === filter);
   }), [challenges, filter, query]);
 
-  const selectedAssessment = [...assessmentRows, ...serverSubmissions].find((row) => row.submission.id === selectedSubmissionId) ?? assessmentRows[0] ?? serverSubmissions[0];
   const allAssessmentRows = [...assessmentRows];
-  for (const row of serverSubmissions) {
+  for (const serverRow of serverSubmissions) {
+    let row = serverRow;
+    if (!row.challenge) {
+      const matched = challenges.find((item) => item.id === row.submission.challengeId) ?? challengeLibrary.find((item) => item.id === row.submission.challengeId);
+      if (!matched) continue;
+      row = { ...row, challenge: matched };
+    }
     if (!allAssessmentRows.some((existing) => existing.submission.id === row.submission.id)) allAssessmentRows.unshift(row);
   }
+  const selectedAssessment = allAssessmentRows.find((row) => row.submission.id === selectedSubmissionId) ?? allAssessmentRows[0];
 
   function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -190,36 +203,7 @@ export function App() {
       } catch (error) { setSetupStatus(error instanceof Error ? error.message : 'Camera capture failed.'); }
       finally { stream?.getTracks().forEach((track) => track.stop()); }
     }
-    return <main className="auth-shell"><section className="auth-card setup-phone-card"><div className="auth-brand"><span className="brand-mark">e</span><span>examiner</span></div><span className="eyebrow">PHONE SETUP CHECKPOINT</span><h1>Show your workspace</h1><p className="auth-intro">With your consent, this photo is sent to Gemini for a neutral visible-object note and shown to the recruiter as context. It cannot prove cheating and does not change your assessment score.</p><label className="camera-consent"><input type="checkbox" checked={setupConsent} onChange={(event) => setSetupConsent(event.target.checked)} /><span>I consent to capture, Gemini description, and recruiter review of this setup image.</span></label><button className="button-primary auth-submit" disabled={!setupConsent} onClick={capturePhoneSetup}>Capture setup photo</button>{setupImage && <img className="setup-preview" src={setupImage} alt="Candidate setup submitted for recruiter review" />}<p role="status" className="setup-status">{setupStatus}</p></section></main>;
-  }
-
-  if (setupPath) {
-    const sessionId = params.get('session') ?? '';
-    async function capturePhoneSetup() {
-      if (!setupConsent || !navigator.mediaDevices?.getUserMedia) { setSetupStatus('Consent and a camera-capable browser are required.'); return; }
-      let stream: MediaStream | undefined;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        const video = document.createElement('video');
-        video.srcObject = stream; video.muted = true; video.playsInline = true;
-        await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('Camera unavailable')); });
-        await video.play();
-        const canvas = document.createElement('canvas'); canvas.width = Math.min(640, video.videoWidth || 640); canvas.height = Math.min(480, video.videoHeight || 480);
-        const context = canvas.getContext('2d'); if (!context) throw new Error('Could not capture image');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const image = await new Promise<string>((resolve, reject) => canvas.toBlob((blob) => { if (!blob) { reject(new Error('Could not encode image')); return; } const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image')); reader.onerror = () => reject(new Error('Could not read image')); reader.readAsDataURL(blob); }, 'image/jpeg', 0.45));
-      const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ sessionId, imageData: image, consented: true }) });
-      if (!response.ok) throw new Error('Setup note could not be saved; check the active invite and try again.');
-        setSetupImage(image);
-        const checked = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
-        const description = `${checked.note?.note ?? 'Setup image captured.'} ${checked.note?.observations?.join('; ') ?? ''} ${checked.note?.uncertainty ?? 'Human review required.'}`;
-        setSetupStatus(description);
-        const invited = loadInvites().find((item) => item.sessionId === sessionId);
-        if (invited && checked.event) saveInvite({ ...invited, integrityEvents: [...(invited.integrityEvents ?? []), { ...checked.event, imageData: image, description }] });
-      } catch (error) { setSetupStatus(error instanceof Error ? error.message : 'Camera capture failed.'); }
-      finally { stream?.getTracks().forEach((track) => track.stop()); }
-    }
-    return <main className="auth-shell"><section className="auth-card setup-phone-card"><div className="auth-brand"><span className="brand-mark">e</span><span>examiner</span></div><span className="eyebrow">PHONE SETUP CHECKPOINT</span><h1>Show your workspace</h1><p className="auth-intro">This image is sent to Gemini for a neutral description and shown to the recruiter as review context. It does not affect your task score and cannot prove cheating.</p><label className="camera-consent"><input type="checkbox" checked={setupConsent} onChange={(event) => setSetupConsent(event.target.checked)} /><span>I consent to capture, Gemini description, and recruiter review for this assessment.</span></label><button className="button-primary auth-submit" disabled={!setupConsent} onClick={capturePhoneSetup}>Capture setup photo</button>{setupImage && <img className="setup-preview" src={setupImage} alt="Your captured setup preview" />}<p role="status" className="setup-status">{setupStatus}</p></section></main>;
+    return <main className="auth-shell"><section className="auth-card setup-phone-card"><div className="auth-brand"><span className="brand-mark">e</span><span>examiner</span></div><span className="eyebrow">PHONE SETUP CHECKPOINT</span><h1>Show your workspace</h1><p className="auth-intro">You scanned the QR from your assessment screen. Capture your workspace here on your phone — your exam on the other device unlocks automatically once this photo is saved.</p><ol className="gate-steps"><li><strong>Tick the consent box</strong> below.</li><li><strong>Frame your desk</strong> — your workspace and the edge of your screen, from where you sit. No other people should be visible.</li><li><strong>Tap “Capture setup photo”</strong> and wait for the confirmation note.</li><li><strong>Return to your computer</strong> — the exam unlocks by itself; you can close this page.</li></ol><label className="camera-consent"><input type="checkbox" checked={setupConsent} onChange={(event) => setSetupConsent(event.target.checked)} /><span>I consent to capture, Gemini description, and recruiter review of this setup image.</span></label><button className="button-primary auth-submit" disabled={!setupConsent} onClick={capturePhoneSetup}>Capture setup photo</button>{setupImage && <img className="setup-preview" src={setupImage} alt="Candidate setup submitted for recruiter review" />}<p role="status" className="setup-status">{setupStatus}</p></section></main>;
   }
 
 
@@ -238,13 +222,36 @@ export function App() {
     setShowPhoneLinks(true);
   }
 
+  async function generateAiChallenge(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (aiGenerating) return;
+    setAiGenerating(true);
+    setAiError('');
+    setAiDone(false);
+    try {
+      const response = await fetch('/api/generate-challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleTitle: aiRoleTitle.trim(), difficulty: aiDifficulty, mode: aiMode }) });
+      if (!response.ok) throw new Error('generate-challenge failed');
+      const data = await response.json() as { challenge?: Challenge };
+      if (!data.challenge) throw new Error('No challenge returned');
+      persistChallenge(data.challenge);
+      setChallenges(loadChallenges());
+      setSelectedId(data.challenge.id);
+      setAiDone(true);
+      setAiRoleTitle('');
+    } catch {
+      setAiError('Could not generate a challenge right now. Check the API is running, then try again.');
+    } finally {
+      setAiGenerating(false);
+    }
+  }
+
   async function startAssessmentSession(): Promise<boolean> {
     const selectedChallengeId = selected.id;
     try {
       const response = await fetch('/api/assessment-sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) },
-        body: JSON.stringify({ challengeId: selectedChallengeId }),
+        body: JSON.stringify({ challengeId: selectedChallengeId, challenge: selected }),
       });
       if (!response.ok) return false;
       const result = await response.json() as { sessionId?: string; candidateToken?: string; challenge?: Challenge };
@@ -345,7 +352,7 @@ export function App() {
 
   if (route === 'candidate' && candidateChallengeId) {
     const examChallenge = challenges.find((challenge) => challenge.id === candidateChallengeId) ?? challengeLibrary.find((challenge) => challenge.id === candidateChallengeId) ?? challenges[0];
-    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} onCameraImage={async (event) => {
+    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} setupUrl={candidateSessionId ? `${window.location.origin}/setup?session=${encodeURIComponent(candidateSessionId)}` : ''} onSetupPhotoCount={candidateSessionId ? async () => { try { const response = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}/setup-count`, { headers: candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {} }); if (!response.ok) return 0; const data = await response.json() as { count?: number }; return typeof data.count === 'number' ? data.count : 0; } catch { return 0; } } : undefined} onCameraImage={async (event) => {
       const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ imageData: event.imageData, consented: true, sessionId: candidateSessionId }) });
       if (!response.ok) return `${event.description} Gemini image notes unavailable; recruiter should inspect the image directly.`;
       const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
@@ -428,7 +435,8 @@ export function App() {
                 </button>)}
                 {filteredChallenges.length === 0 && <div className="empty-state"><Search size={18} /><strong>No challenges found</strong><span>Try a different search or filter.</span></div>}
               </div>
-              <button className="ai-create-link" onClick={() => { setEditing({ ...blankChallenge, id: `ai-draft-${Date.now()}`, source: 'ai-draft', title: 'AI-tailored engineering challenge' }); setError(''); }}><span className="sparkle-box"><Sparkles size={15} /></span><span><strong>Tailor a challenge with AI</strong><small>Start with role requirements; review before assigning.</small></span><ArrowRight size={16} /></button>
+              <button className="ai-create-link" onClick={() => { setAiPanelOpen((open) => !open); setAiError(''); setAiDone(false); }}><span className="sparkle-box"><Sparkles size={15} /></span><span><strong>Tailor a challenge with AI</strong><small>Start with role requirements; review before assigning.</small></span><ArrowRight size={16} /></button>
+              {aiPanelOpen && <form className="ai-generate-panel" onSubmit={generateAiChallenge}><label>Role title<input value={aiRoleTitle} required minLength={3} placeholder="e.g. Backend Engineer, Product Designer" onChange={(event) => setAiRoleTitle(event.target.value)} /></label><label>Difficulty<select value={aiDifficulty} onChange={(event) => setAiDifficulty(event.target.value as 'Foundational'|'Intermediate'|'Advanced')}><option>Foundational</option><option>Intermediate</option><option>Advanced</option></select></label><label>Task type<select value={aiMode} onChange={(event) => setAiMode(event.target.value as Challenge['mode'])}><option value="debugging">Debugging work sample</option><option value="code-review">Code review</option><option value="technical-scenario">Technical scenario</option></select></label><button className="button-primary" type="submit" disabled={aiGenerating}>{aiGenerating ? 'Generating…' : 'Generate challenge'}</button>{aiError && <p className="form-error" role="alert">{aiError}</p>}{aiDone && <p className="ai-done-note" role="status">AI draft added to your library — review it below, then create an invite.</p>}</form>}
             </section>
 
             <section className="preview-panel" aria-label="Challenge preview">
