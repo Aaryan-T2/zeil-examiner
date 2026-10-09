@@ -136,4 +136,20 @@ describe('CandidateExam', () => {
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /take start photo/i })).toBeNull();
   });
+
+  it('shows the captured workspace photos on the review screen after submit', async () => {
+    const original = navigator.mediaDevices;
+    mockCameraSuccess();
+    const onSubmit = vi.fn();
+    render(<CandidateExam challenge={challengeLibrary[0]} onSubmit={onSubmit} onBack={vi.fn()} />);
+    await passStartGate();
+
+    fireEvent.change(screen.getByLabelText(/your response/i), { target: { value: 'This response is long enough to submit and review.' } });
+    fireEvent.click(screen.getByRole('button', { name: /submit work/i }));
+    expect(onSubmit).toHaveBeenCalled();
+
+    expect(await screen.findByText(/your captured workspace photos/i)).toBeTruthy();
+    expect(document.querySelector('.review-gallery-item img')).toBeTruthy();
+    restoreCamera(original);
+  });
 });

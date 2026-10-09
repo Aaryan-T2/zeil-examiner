@@ -46,7 +46,10 @@ describe('assessment API', () => {
   it('reports health without revealing any configured secret', async () => {
     const response = await fetch(`${baseUrl}/api/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, geminiConfigured: false });
+    const body = await response.json() as { ok: boolean; geminiConfigured: boolean; lanAddress: string };
+    expect(body.ok).toBe(true);
+    expect(body.geminiConfigured).toBe(false);
+    expect(typeof body.lanAddress).toBe('string');
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 

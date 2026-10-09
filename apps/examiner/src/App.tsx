@@ -83,6 +83,7 @@ export function App() {
   const [setupStatus, setSetupStatus] = useState('');
   const [phoneUrl, setPhoneUrl] = useState('');
   const [phoneQrSvg, setPhoneQrSvg] = useState('');
+  const [lanAddress, setLanAddress] = useState('');
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiRoleTitle, setAiRoleTitle] = useState('');
   const [aiDifficulty, setAiDifficulty] = useState<'Foundational'|'Intermediate'|'Advanced'>('Intermediate');
@@ -90,6 +91,16 @@ export function App() {
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiDone, setAiDone] = useState(false);
+
+  useEffect(() => {
+    void fetch('/api/health').then(async (response) => {
+      if (!response.ok) return;
+      const data = await response.json() as { lanAddress?: string };
+      if (typeof data.lanAddress === 'string') setLanAddress(data.lanAddress);
+    }).catch(() => undefined);
+  }, []);
+
+  function phoneOrigin(): string { const here = window.location.hostname; const host = lanAddress && (here === 'localhost' || here === '127.0.0.1') ? lanAddress : here; const port = window.location.port ? `:${window.location.port}` : ''; return `${window.location.protocol}//${host}${port}`; }
 
   useEffect(() => {
     if (activeUser?.role !== 'recruiter') return;
@@ -181,6 +192,8 @@ export function App() {
 
   if (setupPath) {
     const sessionId = params.get('session') ?? '';
+    const tokenParam = params.get('token') ?? '';
+    const setupToken = tokenParam || candidateSessionToken || '';
     async function capturePhoneSetup() {
       if (!setupConsent || !navigator.mediaDevices?.getUserMedia) { setSetupStatus('Consent and a camera-capable browser are required.'); return; }
       let stream: MediaStream | undefined;
@@ -193,7 +206,7 @@ export function App() {
         const context = canvas.getContext('2d'); if (!context) throw new Error('Could not capture image.');
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const image = await new Promise<string>((resolve, reject) => canvas.toBlob((blob) => { if (!blob) { reject(new Error('Could not encode image.')); return; } const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image.')); reader.onerror = () => reject(new Error('Could not read image.')); reader.readAsDataURL(blob); }, 'image/jpeg', .45));
-        const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ sessionId, imageData: image, consented: true }) });
+        const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(setupToken ? { 'x-candidate-token': setupToken } : {}) }, body: JSON.stringify({ sessionId, imageData: image, consented: true }) });
         if (!response.ok) throw new Error('Could not save this setup check. Return to the invite and ask the recruiter to create a fresh QR.');
         const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
         setSetupImage(image);
@@ -257,7 +270,7 @@ export function App() {
       const result = await response.json() as { sessionId?: string; candidateToken?: string; challenge?: Challenge };
       if (!result.sessionId || !result.candidateToken || !result.challenge) return false;
       const inviteUrlValue = `${window.location.origin}/candidate?session=${encodeURIComponent(result.sessionId)}`;
-      const phoneUrlValue = `${window.location.origin}/setup?session=${encodeURIComponent(result.sessionId)}`;
+      const phoneUrlValue = `${phoneOrigin()}/setup?session=${encodeURIComponent(result.sessionId)}&token=${encodeURIComponent(result.candidateToken)}`;
       setPhoneUrl(phoneUrlValue);
       setPhoneQrSvg(await createQrSvg(phoneUrlValue));
       try {
@@ -312,7 +325,7 @@ export function App() {
     const allIntegrityEvents = [...integrityEvents, ...(inviteRecord?.integrityEvents ?? [])];
     try {
       if (candidateSessionId) {
-        const activeSession = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}`);
+        const activeSession = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}`, { headers: candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {} });
         if (!activeSession.ok) throw new Error('Candidate invitation expired. Ask the recruiter for a new invite.');
       }
       const result = await fetch('/api/assess', {
@@ -352,7 +365,7 @@ export function App() {
 
   if (route === 'candidate' && candidateChallengeId) {
     const examChallenge = challenges.find((challenge) => challenge.id === candidateChallengeId) ?? challengeLibrary.find((challenge) => challenge.id === candidateChallengeId) ?? challenges[0];
-    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} setupUrl={candidateSessionId ? `${window.location.origin}/setup?session=${encodeURIComponent(candidateSessionId)}` : ''} onSetupPhotoCount={candidateSessionId ? async () => { try { const response = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}/setup-count`, { headers: candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {} }); if (!response.ok) return 0; const data = await response.json() as { count?: number }; return typeof data.count === 'number' ? data.count : 0; } catch { return 0; } } : undefined} onCameraImage={async (event) => {
+    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} setupUrl={candidateSessionId ? `${phoneOrigin()}/setup?session=${encodeURIComponent(candidateSessionId)}${candidateSessionToken ? `&token=${encodeURIComponent(candidateSessionToken)}` : ''}` : ''} onSetupPhotoCount={candidateSessionId ? async () => { try { const response = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}/setup-count`, { headers: candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {} }); if (!response.ok) return 0; const data = await response.json() as { count?: number }; return typeof data.count === 'number' ? data.count : 0; } catch { return 0; } } : undefined} onCameraImage={async (event) => {
       const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ imageData: event.imageData, consented: true, sessionId: candidateSessionId }) });
       if (!response.ok) return `${event.description} Gemini image notes unavailable; recruiter should inspect the image directly.`;
       const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
