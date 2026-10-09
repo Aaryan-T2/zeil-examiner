@@ -21,7 +21,7 @@ function CapturedPhotos({ events }: { events: IntegrityEvent[] }) {
   return <div className="review-gallery"><h2 className="review-gallery-heading">Your captured workspace photos</h2><div className="review-gallery-grid">{photos.map((event, index) => <figure className="review-gallery-item" key={event.id}><img src={event.imageData} alt={`Workspace photo ${index + 1}`} /><figcaption>{index === 0 ? 'Start setup photo' : `Checkpoint ${index}`} · {new Date(event.occurredAt).toLocaleTimeString()}</figcaption></figure>)}</div><p className="review-gallery-note">These photos were sent to your recruiter as session context. They never affect your task score.</p></div>;
 }
 
-export function CandidateExam({ challenge, onSubmit, onBack, onFocusEvent, onCameraImage, onProctorFrame, proctorIntervalMs = 9000, assessing = false, submitError = '' }: CandidateExamProps) {
+export function CandidateExam({ challenge, onSubmit, onBack, onFocusEvent, onCameraImage, onProctorFrame, proctorIntervalMs = 2000, assessing = false, submitError = '' }: CandidateExamProps) {
   const [name, setName] = useState('Jordan Lee');
   const [response, setResponse] = useState('');
   const [startedAt] = useState(() => Date.now());
@@ -85,7 +85,7 @@ export function CandidateExam({ challenge, onSubmit, onBack, onFocusEvent, onCam
       setProctorActive(false);
     };
     const schedule = () => {
-      timer = window.setTimeout(runTick, proctorIntervalMs + Math.floor(Math.random() * 4000));
+      timer = window.setTimeout(runTick, proctorIntervalMs + Math.floor(Math.random() * 300));
     };
     const runTick = async () => {
       if (cancelled || stopped) return;
