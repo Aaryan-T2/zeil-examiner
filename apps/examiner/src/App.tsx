@@ -329,7 +329,7 @@ export function App() {
       }
       const result = await fetch('/api/assess', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) },
         body: JSON.stringify({ challenge, submission, integrityEvents: allIntegrityEvents, ...(candidateSessionId ? { sessionId: candidateSessionId } : {}) }),
       });
       if (result.ok) {

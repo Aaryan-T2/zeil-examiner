@@ -273,7 +273,7 @@ export function CandidateExam({ challenge, onSubmit, onBack, onFocusEvent, onCam
   }
 
   if (submitted && stoppedByProctor) {
-    return <main className="candidate-shell"><section className="candidate-complete"><span className="complete-mark"><ShieldCheck size={24} /></span><span className="eyebrow">SESSION FLAGGED FOR REVIEW</span><h1>Session stopped for review</h1><p>Your work was submitted automatically and a live-session flag was sent to your recruiter for human review. This is not a pass or rejection.</p><CapturedPhotos events={integrityEvents} /><button className="button-secondary" onClick={onBack}>Sign out</button></section></main>;
+    return <main className="candidate-shell"><section className="candidate-complete"><span className="complete-mark"><ShieldCheck size={24} /></span><span className="eyebrow">SESSION ENDED</span><h1>Caught using your phone</h1><p>You were caught using your phone during the live-monitored exam, so it has ended and your work so far was submitted for the record. Please email your recruiter at <strong>recruiter@gmail.com</strong> to ask for another attempt.</p><button className="button-secondary" onClick={onBack}>Sign out</button></section></main>;
   }
 
   if (submitted) {

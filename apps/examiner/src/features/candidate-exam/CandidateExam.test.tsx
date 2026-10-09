@@ -125,7 +125,7 @@ describe('CandidateExam', () => {
     await passStartGate();
     fireEvent.change(screen.getByLabelText(/your response/i), { target: { value: 'Drafting a careful answer while proctoring runs.' } });
 
-    expect(await screen.findByText(/session stopped for review/i, undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: /caught using your phone/i }, { timeout: 10_000 })).toBeTruthy();
     expect(onProctorFrame).toHaveBeenCalled();
     expect(onSubmit).toHaveBeenCalled();
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ challengeId: challengeLibrary[0].id, response: 'Drafting a careful answer while proctoring runs.' });
