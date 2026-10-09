@@ -13,11 +13,10 @@ Recruiters describe a job role and Gemini drafts a realistic work sample with a 
 1. [What it does](#what-it-does)
 2. [How to download & run it](#how-to-download--run-it)
 3. [Demo walkthrough](#demo-walkthrough)
-4. [Testing with a phone (live proctoring)](#testing-with-a-phone-live-proctoring)
-5. [How it works (architecture)](#how-it-works-architecture)
-6. [Tests & evaluation](#tests--evaluation)
-7. [Troubleshooting](#troubleshooting)
-8. [Tech stack](#tech-stack)
+4. [How it works (architecture)](#how-it-works-architecture)
+5. [Tests & evaluation](#tests--evaluation)
+6. [Troubleshooting](#troubleshooting)
+7. [Tech stack](#tech-stack)
 
 ---
 
@@ -65,7 +64,7 @@ cd zeil-examiner
 ### 2. Install
 
 ```bash
-cd apps/examiner
+cd zeil-examiner\apps\examiner
 npm install
 ```
 
