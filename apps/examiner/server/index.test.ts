@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createServer } from 'node:net';
 
 let apiProcess: ReturnType<typeof spawn>;
@@ -20,7 +22,9 @@ async function availablePort(): Promise<number> {
 beforeAll(async () => {
   const port = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  apiProcess = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/index.ts'], {
+  const tsxCli = ['node_modules/tsx/dist/cli.mjs', '../../node_modules/tsx/dist/cli.mjs'].find((candidate) => existsSync(resolve(candidate)));
+  if (!tsxCli) throw new Error('tsx CLI not found.');
+  apiProcess = spawn(process.execPath, [tsxCli, 'server/index.ts'], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), GEMINI_API_KEY: '' },
     stdio: 'ignore',

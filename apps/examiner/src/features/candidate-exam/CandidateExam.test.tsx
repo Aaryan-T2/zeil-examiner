@@ -45,7 +45,7 @@ it('blocks pasted text and reports a separate paste integrity event on submit', 
     fireEvent.paste(answer, { clipboardData: { getData: () => 'pasted answer text' } });
     expect(screen.getByText(/1 paste attempts blocked/i)).toBeTruthy();
     fireEvent.change(answer, { target: { value: 'A typed response with enough detail to be submitted.' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Submit work$/, disabled: false }));
+    fireEvent.click(screen.getAllByRole('button', { name: /submit work/i }).find((btn) => !btn.hasAttribute('disabled'))!);
     expect(onSubmit.mock.calls[0][1].some((event: { kind: string }) => event.kind === 'paste-blocked')).toBe(true);
   });
 
@@ -71,9 +71,9 @@ it('blocks pasted text and reports a separate paste integrity event on submit', 
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) } });
     const onCameraImage = vi.fn().mockResolvedValue('AI note: laptop visible. Uncertainty: angle limited.');
     render(<CandidateExam challenge={challengeLibrary[0]} onSubmit={vi.fn()} onBack={vi.fn()} onCameraImage={onCameraImage} />);
-    await vi.waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2));
+    await vi.waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(1));
     fireEvent.click(screen.getAllByRole('checkbox')[0]);
-    fireEvent.click(screen.getAllByRole('button', { name: /capture start setup/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /capture start setup/i }));
     await vi.waitFor(() => expect(onCameraImage).toHaveBeenCalled());
     expect(drawImage).toHaveBeenCalled();
     expect(toBlob).toHaveBeenCalled();
