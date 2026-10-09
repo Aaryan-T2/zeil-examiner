@@ -69,3 +69,15 @@ h1,h2,h3,h4{font-family:'Manrope',system-ui,'Segoe UI',sans-serif;letter-spacing
 .review-gallery-item img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;background:#eee}
 .review-gallery-item figcaption{font:500 11px 'DM Mono',Consolas,monospace;color:var(--muted);margin-top:6px}
 .review-gallery-note{font-size:13px;color:var(--muted);margin:12px 0 0}
+
+/* ---- phone capture via file input (HTTP-safe) ---- */
+.phone-capture-label{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden}
+.phone-capture-label input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:100px}
+.phone-capture-label:has(input:disabled){opacity:.55;cursor:not-allowed}
+.flagged-banner{border:1.5px solid #c0392b;background:#fdf0ee;border-radius:10px;padding:12px 14px;margin:10px 0;display:flex;flex-direction:column;gap:5px}
+.flagged-banner strong{font:700 12px 'DM Mono',Consolas,monospace;letter-spacing:.8px;color:#c0392b}
+.flagged-banner span{font-size:13px;line-height:1.5;color:var(--ink)}
+.proctor-live-badge{display:inline-flex;align-items:center;gap:8px;font:500 11px 'DM Mono',Consolas,monospace;letter-spacing:.5px;color:var(--green,#6d4aff);border:1px solid var(--line,#e7eae4);background:#fff;border-radius:99px;padding:6px 12px;margin:0 0 12px}
+.proctor-live-badge i{width:8px;height:8px;border-radius:50%;background:#e74c3c;display:inline-block;animation:proctor-pulse 1.4s ease-in-out infinite}
+@keyframes proctor-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.proctor-preview{position:fixed;right:18px;bottom:18px;width:140px;border-radius:10px;border:2px solid #6d4aff;box-shadow:0 8px 24px rgba(30,41,36,.25);z-index:40;background:#111}

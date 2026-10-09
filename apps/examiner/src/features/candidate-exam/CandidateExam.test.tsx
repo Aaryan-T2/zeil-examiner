@@ -114,27 +114,23 @@ describe('CandidateExam', () => {
     restoreCamera(originalMedia);
   });
 
-  it('shows an automatic phone-pairing QR when a setup URL is provided', async () => {
+  it('stops the exam and submits for review when a live frame is flagged', async () => {
     const original = navigator.mediaDevices;
     mockCameraSuccess();
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<svg data-qr="1"></svg>' }) as unknown as typeof fetch;
-    render(<CandidateExam challenge={challengeLibrary[0]} onSubmit={vi.fn()} onBack={vi.fn()} setupUrl="http://localhost:5173/setup?session=abc" />);
-    expect(await screen.findByText(/pair your phone/i)).toBeTruthy();
-    await waitFor(() => expect(document.querySelector('.qr-svg svg')).toBeTruthy());
-    expect(screen.getByText(/exam unlocks on its own/i)).toBeTruthy();
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,proctoredframe');
+    const onProctorFrame = vi.fn().mockResolvedValue({ flagged: true, stop: true, note: 'Phone visible on desk.', uncertainty: 'Clear view.' });
+    const onSubmit = vi.fn();
+    render(<CandidateExam challenge={challengeLibrary[0]} onSubmit={onSubmit} onBack={vi.fn()} onProctorFrame={onProctorFrame} proctorIntervalMs={40} />);
+
+    await passStartGate();
+    fireEvent.change(screen.getByLabelText(/your response/i), { target: { value: 'Drafting a careful answer while proctoring runs.' } });
+
+    expect(await screen.findByText(/session stopped for review/i, undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(onProctorFrame).toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalled();
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ challengeId: challengeLibrary[0].id, response: 'Drafting a careful answer while proctoring runs.' });
+    expect(onSubmit.mock.calls[0][1].some((event: { kind: string }) => event.kind === 'proctor-flag')).toBeTruthy();
     restoreCamera(original);
-  });
-
-  it('unlocks automatically when a phone setup photo is detected', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<svg data-qr="1"></svg>' }) as unknown as typeof fetch;
-    const onSetupPhotoCount = vi.fn().mockResolvedValue(1);
-    render(<CandidateExam challenge={challengeLibrary[0]} onSubmit={vi.fn()} onBack={vi.fn()} setupUrl="http://localhost:5173/setup?session=abc" onSetupPhotoCount={onSetupPhotoCount} />);
-
-    expect(screen.queryByLabelText(/your response/i)).toBeNull();
-    await waitFor(() => expect(screen.getByLabelText(/your response/i)).toBeTruthy());
-    expect(onSetupPhotoCount).toHaveBeenCalled();
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByRole('button', { name: /take start photo/i })).toBeNull();
   });
 
   it('shows the captured workspace photos on the review screen after submit', async () => {

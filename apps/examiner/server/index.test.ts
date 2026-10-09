@@ -81,6 +81,33 @@ describe('assessment API', () => {
     expect(authorized.status).toBe(200);
   });
 
+  it('rejects proctor frames with a garbage payload', async () => {
+    const response = await fetch(`${baseUrl}/api/proctor-check`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nope: true }) });
+    expect(response.status).toBe(400);
+  });
+
+  it('requires the candidate token for a valid-shaped proctor frame', async () => {
+    const sessionResponse = await fetch(`${baseUrl}/api/assessment-sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: 'engineer-api-debug' }) });
+    const session = await sessionResponse.json() as { sessionId: string; candidateToken: string };
+    const payload = { sessionId: session.sessionId, imageData: 'data:image/jpeg;base64,ZmFrZQ==', consented: true };
+    const missing = await fetch(`${baseUrl}/api/proctor-check`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    expect(missing.status).toBe(403);
+    const wrong = await fetch(`${baseUrl}/api/proctor-check`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-candidate-token': 'not-the-token' }, body: JSON.stringify(payload) });
+    expect(wrong.status).toBe(403);
+  });
+
+  it('accepts a consented proctor frame with the candidate token and flags nothing without a vision key', async () => {
+    const sessionResponse = await fetch(`${baseUrl}/api/assessment-sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: 'engineer-api-debug' }) });
+    const session = await sessionResponse.json() as { sessionId: string; candidateToken: string };
+    const payload = { sessionId: session.sessionId, imageData: 'data:image/jpeg;base64,ZmFrZQ==', consented: true };
+    const response = await fetch(`${baseUrl}/api/proctor-check`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-candidate-token': session.candidateToken }, body: JSON.stringify(payload) });
+    expect(response.status).toBe(200);
+    const verdict = await response.json() as { flagged: boolean; stop: boolean; note: string };
+    expect(verdict.flagged).toBe(false);
+    expect(verdict.stop).toBe(false);
+    expect(typeof verdict.note).toBe('string');
+  });
+
   it('rejects malformed and oversized submissions before model calls', async () => {
     const malformed = await fetch(`${baseUrl}/api/assess`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nope: true }) });
     expect(malformed.status).toBe(400);

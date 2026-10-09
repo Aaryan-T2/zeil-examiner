@@ -55,7 +55,7 @@ export interface Assessment {
 export interface IntegrityEvent {
   id: string;
   occurredAt: string;
-  kind: 'focus-lost' | 'fullscreen-exit' | 'camera-check' | 'paste-blocked';
+  kind: 'focus-lost' | 'fullscreen-exit' | 'camera-check' | 'paste-blocked' | 'proctor-flag';
   description: string;
   reviewRequired: boolean;
   imageData?: string;

@@ -11,6 +11,7 @@ import { assessSubmissionWithGemini } from './shared/gemini-assessment';
 import { CandidateExam } from './features/candidate-exam/CandidateExam';
 import { ReviewReport } from './features/review-report/ReviewReport';
 import { authenticateDemoUser } from './shared/auth';
+import { fileToJpegDataUrl } from './shared/image';
 import type { UserRole } from './shared/auth';
 
 async function createQrSvg(text: string): Promise<string> {
@@ -194,29 +195,27 @@ export function App() {
     const sessionId = params.get('session') ?? '';
     const tokenParam = params.get('token') ?? '';
     const setupToken = tokenParam || candidateSessionToken || '';
-    async function capturePhoneSetup() {
-      if (!setupConsent || !navigator.mediaDevices?.getUserMedia) { setSetupStatus('Consent and a camera-capable browser are required.'); return; }
-      let stream: MediaStream | undefined;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        const video = document.createElement('video'); video.srcObject = stream; video.muted = true; video.playsInline = true;
-        await new Promise<void>((resolve, reject) => { const timeout = window.setTimeout(() => reject(new Error('Camera preview timed out.')), 5000); video.onloadedmetadata = () => { window.clearTimeout(timeout); resolve(); }; video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Camera unavailable.')); }; });
-        await video.play();
-        const canvas = document.createElement('canvas'); canvas.width = Math.min(640, video.videoWidth || 640); canvas.height = Math.min(480, video.videoHeight || 480);
-        const context = canvas.getContext('2d'); if (!context) throw new Error('Could not capture image.');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const image = await new Promise<string>((resolve, reject) => canvas.toBlob((blob) => { if (!blob) { reject(new Error('Could not encode image.')); return; } const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image.')); reader.onerror = () => reject(new Error('Could not read image.')); reader.readAsDataURL(blob); }, 'image/jpeg', .45));
-        const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(setupToken ? { 'x-candidate-token': setupToken } : {}) }, body: JSON.stringify({ sessionId, imageData: image, consented: true }) });
-        if (!response.ok) throw new Error('Could not save this setup check. Return to the invite and ask the recruiter to create a fresh QR.');
-        const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
-        setSetupImage(image);
-        setSetupStatus(`${result.note?.note ?? 'Setup captured.'} ${result.note?.observations?.join('; ') ?? ''} ${result.note?.uncertainty ?? 'Recruiter review recommended.'}`);
-        const invite = loadInvites().find((item) => item.sessionId === sessionId);
-        if (invite && result.event) saveInvite({ ...invite, integrityEvents: [...(invite.integrityEvents ?? []), result.event] });
-      } catch (error) { setSetupStatus(error instanceof Error ? error.message : 'Camera capture failed.'); }
-      finally { stream?.getTracks().forEach((track) => track.stop()); }
+    async function submitSetupImage(image: string) {
+      const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(setupToken ? { 'x-candidate-token': setupToken } : {}) }, body: JSON.stringify({ sessionId, imageData: image, consented: true }) });
+      if (!response.ok) throw new Error('Could not save this setup check. Ask the recruiter for a fresh invite link.');
+      const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };
+      setSetupImage(image);
+      setSetupStatus(`Saved! ${result.note?.note ?? 'Setup photo captured.'} ${result.note?.observations?.join('; ') ?? ''} Now return to your computer — your exam unlocks automatically.`);
+      const invite = loadInvites().find((item) => item.sessionId === sessionId);
+      if (invite && result.event) saveInvite({ ...invite, integrityEvents: [...(invite.integrityEvents ?? []), result.event] });
     }
-    return <main className="auth-shell"><section className="auth-card setup-phone-card"><div className="auth-brand"><span className="brand-mark">e</span><span>examiner</span></div><span className="eyebrow">PHONE SETUP CHECKPOINT</span><h1>Show your workspace</h1><p className="auth-intro">You scanned the QR from your assessment screen. Capture your workspace here on your phone — your exam on the other device unlocks automatically once this photo is saved.</p><ol className="gate-steps"><li><strong>Tick the consent box</strong> below.</li><li><strong>Frame your desk</strong> — your workspace and the edge of your screen, from where you sit. No other people should be visible.</li><li><strong>Tap “Capture setup photo”</strong> and wait for the confirmation note.</li><li><strong>Return to your computer</strong> — the exam unlocks by itself; you can close this page.</li></ol><label className="camera-consent"><input type="checkbox" checked={setupConsent} onChange={(event) => setSetupConsent(event.target.checked)} /><span>I consent to capture, Gemini description, and recruiter review of this setup image.</span></label><button className="button-primary auth-submit" disabled={!setupConsent} onClick={capturePhoneSetup}>Capture setup photo</button>{setupImage && <img className="setup-preview" src={setupImage} alt="Candidate setup submitted for recruiter review" />}<p role="status" className="setup-status">{setupStatus}</p></section></main>;
+    async function handleSetupFile(event: React.ChangeEvent<HTMLInputElement>) {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      if (!setupConsent) { setSetupStatus('Tick the consent box first, then take the photo.'); return; }
+      if (!sessionId) { setSetupStatus('This invite link is missing its session. Ask the recruiter for a new invite.'); return; }
+      setSetupStatus('Processing photo…');
+      try {
+        await submitSetupImage(await fileToJpegDataUrl(file));
+      } catch (error) { setSetupStatus(error instanceof Error ? error.message : 'Could not process the photo.'); }
+    }
+    return <main className="auth-shell"><section className="auth-card setup-phone-card"><div className="auth-brand"><span className="brand-mark">e</span><span>examiner</span></div><span className="eyebrow">PHONE SETUP CHECKPOINT</span><h1>Show your workspace</h1><p className="auth-intro">You scanned the QR from your assessment screen. Capture your workspace here on your phone — your exam on the other device unlocks automatically once this photo is saved.</p><ol className="gate-steps"><li><strong>Tick the consent box</strong> below.</li><li><strong>Frame your desk</strong> — your workspace and the edge of your screen, from where you sit. No other people should be visible.</li><li><strong>Tap “Capture setup photo”</strong> and wait for the confirmation note.</li><li><strong>Return to your computer</strong> — the exam unlocks by itself; you can close this page.</li></ol><label className="camera-consent"><input type="checkbox" checked={setupConsent} onChange={(event) => setSetupConsent(event.target.checked)} /><span>I consent to capture, Gemini description, and recruiter review of this setup image.</span></label><label className="button-primary auth-submit phone-capture-label">Take setup photo<input type="file" accept="image/*" capture="environment" disabled={!setupConsent} onChange={(event) => { void handleSetupFile(event); }} /></label>{setupImage && <img className="setup-preview" src={setupImage} alt="Candidate setup submitted for recruiter review" />}<p role="status" className="setup-status">{setupStatus}</p></section></main>;
   }
 
 
@@ -365,7 +364,7 @@ export function App() {
 
   if (route === 'candidate' && candidateChallengeId) {
     const examChallenge = challenges.find((challenge) => challenge.id === candidateChallengeId) ?? challengeLibrary.find((challenge) => challenge.id === candidateChallengeId) ?? challenges[0];
-    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} setupUrl={candidateSessionId ? `${phoneOrigin()}/setup?session=${encodeURIComponent(candidateSessionId)}${candidateSessionToken ? `&token=${encodeURIComponent(candidateSessionToken)}` : ''}` : ''} onSetupPhotoCount={candidateSessionId ? async () => { try { const response = await fetch(`/api/assessment-sessions/${encodeURIComponent(candidateSessionId)}/setup-count`, { headers: candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {} }); if (!response.ok) return 0; const data = await response.json() as { count?: number }; return typeof data.count === 'number' ? data.count : 0; } catch { return 0; } } : undefined} onCameraImage={async (event) => {
+    return <CandidateExam challenge={examChallenge} assessing={isAssessing} onBack={signOut} onProctorFrame={candidateSessionId ? async (imageData: string) => { try { const response = await fetch('/api/proctor-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ sessionId: candidateSessionId, imageData, consented: true }) }); if (!response.ok) return { flagged: false, stop: false, note: 'Live frame could not be checked.', uncertainty: 'Server unavailable; recruiter should review manually.' }; const data = await response.json() as { flagged?: boolean; stop?: boolean; note?: string; uncertainty?: string }; return { flagged: Boolean(data.flagged), stop: Boolean(data.stop), note: data.note ?? '', uncertainty: data.uncertainty ?? '' }; } catch { return { flagged: false, stop: false, note: 'Live frame could not be checked.', uncertainty: 'Network unavailable.' }; } } : undefined} onCameraImage={async (event) => {
       const response = await fetch('/api/setup-check', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(candidateSessionToken ? { 'x-candidate-token': candidateSessionToken } : {}) }, body: JSON.stringify({ imageData: event.imageData, consented: true, sessionId: candidateSessionId }) });
       if (!response.ok) return `${event.description} Gemini image notes unavailable; recruiter should inspect the image directly.`;
       const result = await response.json() as { note?: { note?: string; observations?: string[]; uncertainty?: string }; event?: IntegrityEvent };

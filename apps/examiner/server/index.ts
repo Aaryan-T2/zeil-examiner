@@ -5,6 +5,7 @@ import { config } from 'dotenv';
 import QRCode from 'qrcode';
 import { assessSubmissionWithGemini } from '../src/shared/gemini-assessment.ts';
 import { describeSetupImage } from '../src/shared/gemini-assessment.ts';
+import { analyzeProctorFrame } from '../src/shared/gemini-proctor.ts';
 import { challengeLibrary } from '../src/shared/challenge-library.ts';
 import { validateAssessment, validateChallenge } from '../src/shared/contracts.ts';
 import type { CandidateSubmission, Challenge, IntegrityEvent } from '../src/shared/contracts.ts';
@@ -19,7 +20,7 @@ const sessionEvents = new Map<string, IntegrityEvent[]>();
 const setupEvents = new Map<string, IntegrityEvent[]>();
 const assessments = new Map<string, { challenge: Challenge; submission: CandidateSubmission; result: Awaited<ReturnType<typeof assessSubmissionWithGemini>>; integrityEvents: IntegrityEvent[]; createdAt: number; reviewStatus: 'needs-review' | 'reviewed' }>();
 const PORT = Number(process.env.PORT ?? 8787);
-const MAX_BODY = 48 * 1024;
+const MAX_BODY = 4 * 1024 * 1024;
 
 const styles = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
@@ -71,8 +72,8 @@ function isSubmission(value: unknown): value is { challenge: Challenge; submissi
     const item = event as Record<string, unknown>;
     return typeof item.id === 'string' && item.id.length <= 128
       && typeof item.occurredAt === 'string' && Number.isFinite(Date.parse(item.occurredAt))
-      && ['focus-lost', 'fullscreen-exit', 'camera-check', 'paste-blocked'].includes(String(item.kind))
-      && typeof item.description === 'string' && item.description.length <= 600
+      && ['focus-lost', 'fullscreen-exit', 'camera-check', 'paste-blocked', 'proctor-flag'].includes(String(item.kind))
+      && typeof item.description === 'string' && item.description.length <= 1500
       && typeof item.reviewRequired === 'boolean'
       && (item.imageData === undefined || (typeof item.imageData === 'string' && item.imageData.startsWith('data:image/jpeg;base64,') && item.imageData.length <= 250_000));
   });
@@ -83,7 +84,7 @@ function isIntegrityEvent(value: unknown): value is IntegrityEvent {
   const event = value as Record<string, unknown>;
   return typeof event.id === 'string' && event.id.length <= 128
     && typeof event.occurredAt === 'string' && Number.isFinite(Date.parse(event.occurredAt))
-    && (event.kind === 'focus-lost' || event.kind === 'fullscreen-exit')
+    && (event.kind === 'focus-lost' || event.kind === 'fullscreen-exit' || event.kind === 'proctor-flag')
     && typeof event.description === 'string' && event.description.length <= 600
     && event.reviewRequired === true;
 }
@@ -135,6 +136,30 @@ const server = createServer(async (request, response) => {
       setupEvents.set(input.sessionId, events.slice(-10));
       reply(response, 200, { note, event });
     } catch { reply(response, 400, { error: 'Unable to process setup image.' }); }
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === '/api/proctor-check') {
+    try {
+      const input = await readJson(request) as { sessionId?: unknown; imageData?: unknown; consented?: unknown };
+      if (typeof input.sessionId !== 'string' || input.consented !== true || typeof input.imageData !== 'string' || !input.imageData.startsWith('data:image/jpeg;base64,') || input.imageData.length > 120_000) { reply(response, 400, { error: 'Proctor frame is invalid.' }); return; }
+      const session = sessions.get(input.sessionId);
+      if (!session) { reply(response, 404, { error: 'Assessment session not found.' }); return; }
+      if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
+        sessions.delete(input.sessionId);
+        reply(response, 410, { error: 'Assessment session expired.' });
+        return;
+      }
+      const candidateToken = request.headers['x-candidate-token'];
+      if (typeof candidateToken !== 'string' || candidateToken !== session.candidateToken) { reply(response, 403, { error: 'Assessment session authorization failed.' }); return; }
+      const verdict = await analyzeProctorFrame(input.imageData, process.env.GEMINI_API_KEY);
+      if (verdict.flagged) {
+        const event: IntegrityEvent = { id: randomUUID(), occurredAt: new Date().toISOString(), kind: 'proctor-flag', description: `Live frame flagged: ${verdict.note} Device: ${verdict.device || 'unspecified'}. Uncertainty: ${verdict.uncertainty} This is a review signal, not a misconduct verdict.`, reviewRequired: true, imageData: input.imageData };
+        const events = setupEvents.get(input.sessionId) ?? [];
+        events.push(event);
+        setupEvents.set(input.sessionId, events.slice(-20));
+      }
+      reply(response, 200, { flagged: verdict.flagged, stop: verdict.flagged, note: verdict.note, device: verdict.device, uncertainty: verdict.uncertainty });
+    } catch { reply(response, 400, { error: 'Proctor frame is invalid.' }); }
     return;
   }
   if (request.method === 'POST' && url.pathname === '/api/assess') {
